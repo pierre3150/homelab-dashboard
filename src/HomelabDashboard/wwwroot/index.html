@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Homelab Dashboard</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1115; color: #e6e6e6; margin: 0; padding: 2rem;
+  }
+  h1 { font-weight: 600; margin-bottom: 0.25rem; }
+  .subtitle { color: #8a8f98; margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+  .card {
+    background: #171a21; border: 1px solid #262a33; border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card h3 { margin: 0 0 0.75rem 0; font-size: 1rem; display: flex; justify-content: space-between; align-items: center; }
+  .badge { font-size: 0.7rem; padding: 0.2rem 0.6rem; border-radius: 999px; font-weight: 600; }
+  .running { background: #113a24; color: #4ade80; }
+  .stopped { background: #3a1111; color: #f87171; }
+  .other { background: #2a2a1a; color: #facc15; }
+  .metric { font-size: 0.85rem; color: #b5b9c2; margin: 0.2rem 0; }
+  .bar-bg { background: #262a33; border-radius: 4px; height: 6px; margin-top: 4px; overflow: hidden; }
+  .bar-fill { background: #6366f1; height: 100%; }
+  section { margin-bottom: 2.5rem; }
+  #error { color: #f87171; display: none; margin-bottom: 1rem; }
+  #keyPrompt { margin-bottom: 1.5rem; }
+  input { background: #171a21; border: 1px solid #262a33; color: #e6e6e6; padding: 0.5rem; border-radius: 6px; }
+  button { background: #6366f1; border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-left: 0.5rem; }
+</style>
+</head>
+<body>
+  <h1>🏠 Homelab Dashboard</h1>
+  <p class="subtitle">Etat du cluster Proxmox en direct</p>
+
+  <div id="keyPrompt">
+    <input type="password" id="apiKey" placeholder="X-Api-Key" />
+    <button onclick="saveKeyAndLoad()">Connexion</button>
+  </div>
+
+  <div id="error"></div>
+
+  <section>
+    <h2>Nodes</h2>
+    <div class="grid" id="nodes"></div>
+  </section>
+
+  <section>
+    <h2>VMs &amp; Containers</h2>
+    <div class="grid" id="guests"></div>
+  </section>
+
+<script>
+function fmtBytes(b) {
+  if (!b) return "0 MB";
+  return (b / 1024 / 1024 / 1024).toFixed(1) + " GB";
+}
+function fmtUptime(s) {
+  if (!s) return "-";
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  return d > 0 ? `${d}j ${h}h` : `${h}h`;
+}
+function statusClass(status) {
+  if (status === "running" || status === "online") return "running";
+  if (status === "stopped" || status === "offline") return "stopped";
+  return "other";
+}
+
+function saveKeyAndLoad() {
+  const key = document.getElementById("apiKey").value;
+  if (key) localStorage.setItem("dashboardApiKey", key);
+  load();
+}
+
+async function load() {
+  const errorEl = document.getElementById("error");
+  errorEl.style.display = "none";
+  const key = localStorage.getItem("dashboardApiKey") || "";
+
+  try {
+    const res = await fetch("/api/dashboard/snapshot", { headers: { "X-Api-Key": key } });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`${res.status}: ${text}`);
+    }
+    const data = await res.json();
+    renderNodes(data.nodes);
+    renderGuests(data.guests);
+  } catch (e) {
+    errorEl.textContent = "Erreur: " + e.message;
+    errorEl.style.display = "block";
+  }
+}
+
+function renderNodes(nodes) {
+  const el = document.getElementById("nodes");
+  el.innerHTML = nodes.map(n => `
+    <div class="card">
+      <h3>${n.node} <span class="badge ${statusClass(n.status)}">${n.status}</span></h3>
+      <div class="metric">CPU: ${n.cpuUsage}%</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${n.cpuUsage}%"></div></div>
+      <div class="metric">RAM: ${fmtBytes(n.memoryUsed)} / ${fmtBytes(n.memoryTotal)}</div>
+      <div class="metric">Uptime: ${fmtUptime(n.uptime)}</div>
+    </div>
+  `).join("");
+}
+
+function renderGuests(guests) {
+  const el = document.getElementById("guests");
+  el.innerHTML = guests.map(g => `
+    <div class="card">
+      <h3>${g.name} <span class="badge ${statusClass(g.status)}">${g.status}</span></h3>
+      <div class="metric">#${g.vmId} · ${g.type === "qemu" ? "VM" : "LXC"}</div>
+      <div class="metric">CPU: ${g.cpuUsage}%</div>
+      <div class="metric">RAM: ${fmtBytes(g.memoryUsed)} / ${fmtBytes(g.memoryTotal)}</div>
+      <div class="metric">Uptime: ${fmtUptime(g.uptime)}</div>
+    </div>
+  `).join("");
+}
+
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>
