@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  homelab-dashboard:
+    image: ghcr.io/pierre3150/homelab-dashboard:latest
+    container_name: homelab-dashboard
+    restart: unless-stopped
+    ports:
+      - "8088:8080"
+    environment:
+      # Clé partagée que le frontend doit envoyer dans le header X-Api-Key.
+      # Change cette valeur avant le premier lancement.
+      DASHBOARD__APIKEY: "change-me-to-a-real-secret"
+
+      # Identifiants de l'API Proxmox VE (Datacenter -> Permissions -> API Tokens).
+      # Ne jamais utiliser le mot de passe root ici : un token API se scope et se révoque.
+      PROXMOX__HOST: "192.168.1.X"
+      PROXMOX__TOKENID: "root@pam!dashboard"
+      PROXMOX__TOKENSECRET: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
