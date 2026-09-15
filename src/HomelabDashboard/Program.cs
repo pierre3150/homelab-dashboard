@@ -3,6 +3,7 @@ using HomelabDashboard.Data;
 using HomelabDashboard.Models;
 using HomelabDashboard.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
