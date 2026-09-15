@@ -32,6 +32,7 @@ public class AuthIntegrationTests : IClassFixture<WebApplicationFactory<Program>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Auth:LogFilePath"] = Path.Combine(Path.GetTempPath(), $"auth-test-{dbName}.log"),
+                    ["Dashboard:KeyRingPath"] = Path.Combine(Path.GetTempPath(), $"keys-{dbName}"),
                 });
             });
 
