@@ -6,14 +6,33 @@ services:
     container_name: homelab-dashboard
     restart: unless-stopped
     ports:
-      - "8088:8080"
+      # N'expose que sur localhost: nginx (sur l'hote) est le seul point
+      # d'entree public, le conteneur ne doit jamais etre joignable directement.
+      - "127.0.0.1:8088:8080"
+    volumes:
+      # Base SQLite (utilisateurs, historique de connexions) - persiste entre
+      # les redeploiements.
+      - ./data/db:/data
+      # Trousseau de chiffrement des secrets TOTP - NE JAMAIS perdre ce dossier
+      # sans perdre aussi la 2FA de tous les comptes.
+      - ./data/keys:/data/keys
+      # Journal d'audit des connexions, monte en lecture pour fail2ban qui
+      # tourne sur l'hote (voir deploy/fail2ban/).
+      - ./logs:/data/logs
     environment:
-      # Clé partagée que le frontend doit envoyer dans le header X-Api-Key.
-      # Change cette valeur avant le premier lancement.
-      DASHBOARD__APIKEY: "change-me-to-a-real-secret"
+      # Compte admin cree automatiquement au premier demarrage si aucun
+      # utilisateur n'existe encore. Change le mot de passe ensuite si besoin
+      # (pas d'UI de creation de compte pour l'instant - dashboard personnel).
+      ADMIN_USERNAME: "pierre"
+      ADMIN_PASSWORD: "change-moi-avant-le-premier-demarrage"
 
       # Identifiants de l'API Proxmox VE (Datacenter -> Permissions -> API Tokens).
       # Ne jamais utiliser le mot de passe root ici : un token API se scope et se révoque.
       PROXMOX__HOST: "192.168.1.X"
       PROXMOX__TOKENID: "root@pam!dashboard"
       PROXMOX__TOKENSECRET: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+      # Optionnel: cle secrete hCaptcha (https://www.hcaptcha.com/, gratuit).
+      # Laisse vide pour desactiver le captcha (le honeypot + rate limiting +
+      # fail2ban restent actifs sans lui).
+      CAPTCHA__HCAPTCHASECRETKEY: ""

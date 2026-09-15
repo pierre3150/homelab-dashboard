@@ -1,0 +1,15 @@
+# A ajouter dans /etc/fail2ban/jail.local (ou en tant que fichier separe
+# /etc/fail2ban/jail.d/homelab-dashboard.local)
+#
+# 3 essais (maxretry) sur une fenetre de 10 minutes (findtime) => ban de 10
+# minutes (bantime). Change ces valeurs ici si tu veux un ban plus long -
+# c'est le seul endroit a modifier.
+
+[homelab-dashboard]
+enabled  = true
+filter   = homelab-dashboard
+logpath  = /opt/homelab-dashboard/logs/auth.log
+maxretry = 3
+findtime = 10m
+bantime  = 10m
+action   = %(action_)s

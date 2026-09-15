@@ -27,33 +27,92 @@
   .bar-fill { background: #6366f1; height: 100%; }
   section { margin-bottom: 2.5rem; }
   #error { color: #f87171; display: none; margin-bottom: 1rem; }
-  #keyPrompt { margin-bottom: 1.5rem; }
-  input { background: #171a21; border: 1px solid #262a33; color: #e6e6e6; padding: 0.5rem; border-radius: 6px; }
-  button { background: #6366f1; border: none; color: white; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; margin-left: 0.5rem; }
+  input {
+    background: #171a21; border: 1px solid #262a33; color: #e6e6e6;
+    padding: 0.6rem; border-radius: 6px; display: block; width: 100%;
+    max-width: 320px; margin-bottom: 0.75rem; box-sizing: border-box;
+  }
+  button {
+    background: #6366f1; border: none; color: white; padding: 0.6rem 1.2rem;
+    border-radius: 6px; cursor: pointer;
+  }
+  button.secondary { background: #262a33; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  .hidden { display: none !important; }
+  /* Honeypot: present in the DOM (so simplistic bots fill it) but invisible and
+     unreachable by keyboard for a real user. Do NOT use display:none - some
+     bots specifically skip hidden fields, this needs to look "normal" to them. */
+  .hp-field { position: absolute; left: -9999px; top: -9999px; }
+  #qrCode { max-width: 220px; border-radius: 8px; margin: 1rem 0; }
+  code { background: #262a33; padding: 0.15rem 0.4rem; border-radius: 4px; }
 </style>
 </head>
 <body>
-  <h1>🏠 Homelab Dashboard</h1>
-  <p class="subtitle">Etat du cluster Proxmox en direct</p>
 
-  <div id="keyPrompt">
-    <input type="password" id="apiKey" placeholder="X-Api-Key" />
-    <button onclick="saveKeyAndLoad()">Connexion</button>
+  <div id="loginView">
+    <h1>🏠 Homelab Dashboard</h1>
+    <p class="subtitle">Connexion requise</p>
+    <div id="loginError" style="color:#f87171; margin-bottom:1rem;"></div>
+
+    <form id="passwordForm" onsubmit="return submitPassword(event)">
+      <input type="text" id="username" placeholder="Utilisateur" autocomplete="username" required />
+      <input type="password" id="password" placeholder="Mot de passe" autocomplete="current-password" required />
+      <div class="hp-field" aria-hidden="true">
+        <label for="website">Website</label>
+        <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" />
+      </div>
+      <button type="submit">Se connecter</button>
+    </form>
+
+    <form id="totpForm" class="hidden" onsubmit="return submitTotp(event)">
+      <p>Code de l'application d'authentification (Google Authenticator)</p>
+      <input type="text" id="totpCode" placeholder="123456" inputmode="numeric" maxlength="6" required />
+      <button type="submit">Valider</button>
+    </form>
   </div>
 
-  <div id="error"></div>
+  <div id="dashboardView" class="hidden">
+    <div class="topbar">
+      <div>
+        <h1>🏠 Homelab Dashboard</h1>
+        <p class="subtitle">Etat du cluster Proxmox en direct</p>
+      </div>
+      <div>
+        <span id="whoami" class="subtitle"></span>
+        <button class="secondary" onclick="openTotpSetup()">2FA</button>
+        <button class="secondary" onclick="logout()">Deconnexion</button>
+      </div>
+    </div>
 
-  <section>
-    <h2>Nodes</h2>
-    <div class="grid" id="nodes"></div>
-  </section>
+    <div id="error"></div>
 
-  <section>
-    <h2>VMs &amp; Containers</h2>
-    <div class="grid" id="guests"></div>
-  </section>
+    <section>
+      <h2>Nodes</h2>
+      <div class="grid" id="nodes"></div>
+    </section>
+
+    <section>
+      <h2>VMs &amp; Containers</h2>
+      <div class="grid" id="guests"></div>
+    </section>
+  </div>
+
+  <div id="totpSetupView" class="hidden">
+    <h1>Double authentification</h1>
+    <p class="subtitle">Scanne ce QR code avec Google Authenticator, puis entre le code genere pour l'activer.</p>
+    <img id="qrCode" src="" alt="QR code TOTP" />
+    <p>Ou entre manuellement : <code id="totpSecretUri"></code></p>
+    <form onsubmit="return confirmTotpSetup(event)">
+      <input type="text" id="confirmCode" placeholder="123456" inputmode="numeric" maxlength="6" required />
+      <button type="submit">Activer la 2FA</button>
+    </form>
+    <button class="secondary" onclick="closeTotpSetup()">Retour</button>
+    <p id="totpSetupMessage"></p>
+  </div>
 
 <script>
+let pendingTotpToken = null;
+
 function fmtBytes(b) {
   if (!b) return "0 MB";
   return (b / 1024 / 1024 / 1024).toFixed(1) + " GB";
@@ -70,23 +129,109 @@ function statusClass(status) {
   return "other";
 }
 
-function saveKeyAndLoad() {
-  const key = document.getElementById("apiKey").value;
-  if (key) localStorage.setItem("dashboardApiKey", key);
-  load();
+function show(id) {
+  ["loginView", "dashboardView", "totpSetupView"].forEach(v => {
+    document.getElementById(v).classList.toggle("hidden", v !== id);
+  });
 }
 
-async function load() {
-  const errorEl = document.getElementById("error");
-  errorEl.style.display = "none";
-  const key = localStorage.getItem("dashboardApiKey") || "";
+async function submitPassword(event) {
+  event.preventDefault();
+  const loginError = document.getElementById("loginError");
+  loginError.textContent = "";
+
+  const body = {
+    username: document.getElementById("username").value,
+    password: document.getElementById("password").value,
+    website: document.getElementById("website").value, // honeypot, always empty for real users
+  };
 
   try {
-    const res = await fetch("/api/dashboard/snapshot", { headers: { "X-Api-Key": key } });
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`${res.status}: ${text}`);
+      loginError.textContent = data.error || "Erreur de connexion.";
+      return false;
     }
+
+    if (data.status === "totp_required") {
+      pendingTotpToken = data.pendingToken;
+      document.getElementById("passwordForm").classList.add("hidden");
+      document.getElementById("totpForm").classList.remove("hidden");
+      return false;
+    }
+
+    await enterDashboard();
+  } catch (e) {
+    loginError.textContent = "Erreur reseau.";
+  }
+  return false;
+}
+
+async function submitTotp(event) {
+  event.preventDefault();
+  const loginError = document.getElementById("loginError");
+  loginError.textContent = "";
+
+  try {
+    const res = await fetch("/api/auth/login/totp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pendingToken: pendingTotpToken, code: document.getElementById("totpCode").value }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      loginError.textContent = data.error || "Code invalide.";
+      return false;
+    }
+
+    await enterDashboard();
+  } catch (e) {
+    loginError.textContent = "Erreur reseau.";
+  }
+  return false;
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  document.getElementById("passwordForm").classList.remove("hidden");
+  document.getElementById("totpForm").classList.add("hidden");
+  document.getElementById("username").value = "";
+  document.getElementById("password").value = "";
+  show("loginView");
+}
+
+async function enterDashboard() {
+  const me = await fetch("/api/auth/me").then(r => r.json());
+  document.getElementById("whoami").textContent = me.username;
+  show("dashboardView");
+  loadSnapshot();
+}
+
+async function checkSession() {
+  const res = await fetch("/api/auth/me");
+  if (res.ok) {
+    await enterDashboard();
+  } else {
+    show("loginView");
+  }
+}
+
+async function loadSnapshot() {
+  const errorEl = document.getElementById("error");
+  errorEl.style.display = "none";
+
+  try {
+    const res = await fetch("/api/dashboard/snapshot");
+    if (res.status === 401) { show("loginView"); return; }
+    if (!res.ok) throw new Error(`${res.status}: ${await res.text()}`);
+
     const data = await res.json();
     renderNodes(data.nodes);
     renderGuests(data.guests);
@@ -122,8 +267,38 @@ function renderGuests(guests) {
   `).join("");
 }
 
-load();
-setInterval(load, 15000);
+async function openTotpSetup() {
+  document.getElementById("totpSetupMessage").textContent = "";
+  const res = await fetch("/api/auth/totp/setup", { method: "POST" });
+  if (!res.ok) return;
+  const data = await res.json();
+  document.getElementById("qrCode").src = "data:image/png;base64," + data.qrCodePngBase64;
+  document.getElementById("totpSecretUri").textContent = data.otpAuthUri;
+  show("totpSetupView");
+}
+
+function closeTotpSetup() {
+  show("dashboardView");
+}
+
+async function confirmTotpSetup(event) {
+  event.preventDefault();
+  const msg = document.getElementById("totpSetupMessage");
+  const res = await fetch("/api/auth/totp/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: document.getElementById("confirmCode").value }),
+  });
+  const data = await res.json();
+  msg.textContent = res.ok ? "2FA activee !" : (data.error || "Code invalide.");
+  msg.style.color = res.ok ? "#4ade80" : "#f87171";
+  return false;
+}
+
+checkSession();
+setInterval(() => {
+  if (!document.getElementById("dashboardView").classList.contains("hidden")) loadSnapshot();
+}, 15000);
 </script>
 </body>
 </html>
