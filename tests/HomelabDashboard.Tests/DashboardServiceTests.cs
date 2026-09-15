@@ -1,3 +1,4 @@
+using System.Linq;
 using HomelabDashboard.Models;
 using HomelabDashboard.Services;
 using Moq;
@@ -22,14 +23,14 @@ public class DashboardServiceTests
         mockClient.Setup(c => c.GetGuestsAsync("pve1", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<GuestSummary>
             {
-                new(100, "jellyfin", "lxc", "running", 5.0, 500_000_000, 2_000_000_000, 3600),
+                new(100, "jellyfin", "lxc", "running", "pve1", 5.0, 500_000_000, 2_000_000_000, 3600),
             });
 
         mockClient.Setup(c => c.GetGuestsAsync("pve2", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<GuestSummary>
             {
-                new(200, "nextcloud", "lxc", "running", 3.0, 300_000_000, 1_000_000_000, 7200),
-                new(201, "windows-vm", "qemu", "stopped", 0, 0, 4_000_000_000, 0),
+                new(200, "nextcloud", "lxc", "running", "pve2", 3.0, 300_000_000, 1_000_000_000, 7200),
+                new(201, "windows-vm", "qemu", "stopped", "pve2", 0, 0, 4_000_000_000, 0),
             });
 
         var service = new DashboardService(mockClient.Object);
@@ -41,6 +42,28 @@ public class DashboardServiceTests
         Assert.Contains(snapshot.Guests, g => g.Name == "jellyfin");
         Assert.Contains(snapshot.Guests, g => g.Name == "nextcloud");
         Assert.Contains(snapshot.Guests, g => g.Name == "windows-vm" && g.Status == "stopped");
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_EachGuest_KnowsWhichNodeItRunsOn()
+    {
+        var mockClient = new Mock<IProxmoxClient>();
+
+        mockClient.Setup(c => c.GetNodesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<NodeStatus> { new("pve1", "online", 0, 0, 0, 0), new("pve2", "online", 0, 0, 0, 0) });
+
+        mockClient.Setup(c => c.GetGuestsAsync("pve1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<GuestSummary> { new(100, "jellyfin", "lxc", "running", "pve1", 0, 0, 0, 0) });
+
+        mockClient.Setup(c => c.GetGuestsAsync("pve2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<GuestSummary> { new(200, "nextcloud", "lxc", "running", "pve2", 0, 0, 0, 0) });
+
+        var service = new DashboardService(mockClient.Object);
+
+        var snapshot = await service.GetSnapshotAsync();
+
+        Assert.Equal("pve1", snapshot.Guests.Single(g => g.Name == "jellyfin").Node);
+        Assert.Equal("pve2", snapshot.Guests.Single(g => g.Name == "nextcloud").Node);
     }
 
     [Fact]

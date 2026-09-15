@@ -31,6 +31,13 @@ builder.Services.AddHttpClient<IProxmoxClient, ProxmoxClient>()
     });
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 
+builder.Services.AddHttpClient<IProxmoxConsoleService, ProxmoxConsoleService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+    });
+builder.Services.AddScoped<IConsoleRelayService, ConsoleRelayService>();
+
 // --- Auth services ---
 builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
 builder.Services.AddSingleton<ITotpService, TotpService>();
@@ -122,9 +129,27 @@ app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
 
+app.UseWebSockets();
+
 app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
     .AllowAnonymous();
+
+// --- LXC console (web terminal) ---
+// Not an MVC controller because WebSocket upgrade needs raw HttpContext access.
+// Still requires the same session cookie as everything else - RequireAuthorization()
+// applies the exact same global auth rule as the controller-based endpoints.
+app.Map("/api/console/{node}/{vmid:int}", async (HttpContext context, string node, int vmid, IConsoleRelayService relay) =>
+{
+    if (!context.WebSockets.IsWebSocketRequest)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return;
+    }
+
+    using var clientSocket = await context.WebSockets.AcceptWebSocketAsync();
+    await relay.RelayAsync(clientSocket, node, vmid, context.RequestAborted);
+}).RequireAuthorization();
 
 using (var scope = app.Services.CreateScope())
 {

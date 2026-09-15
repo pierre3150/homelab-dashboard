@@ -49,13 +49,13 @@ public class ProxmoxClient : IProxmoxClient
         await Task.WhenAll(vmsTask, lxcTask);
 
         var guests = new List<GuestSummary>();
-        guests.AddRange(MapGuests(vmsTask.Result?.Data, "qemu"));
-        guests.AddRange(MapGuests(lxcTask.Result?.Data, "lxc"));
+        guests.AddRange(MapGuests(vmsTask.Result?.Data, "qemu", node));
+        guests.AddRange(MapGuests(lxcTask.Result?.Data, "lxc", node));
 
         return guests;
     }
 
-    private static IEnumerable<GuestSummary> MapGuests(List<ProxmoxGuestRaw>? raw, string type)
+    private static IEnumerable<GuestSummary> MapGuests(List<ProxmoxGuestRaw>? raw, string type, string node)
     {
         if (raw is null) yield break;
 
@@ -66,6 +66,7 @@ public class ProxmoxClient : IProxmoxClient
                 Name: g.Name ?? $"{type}-{g.VmId}",
                 Type: type,
                 Status: g.Status,
+                Node: node,
                 CpuUsage: Math.Round((g.Cpu ?? 0) * 100, 1),
                 MemoryUsed: g.Mem ?? 0,
                 MemoryTotal: g.MaxMem ?? 0,

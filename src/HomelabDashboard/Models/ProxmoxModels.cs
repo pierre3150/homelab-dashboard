@@ -14,6 +14,7 @@ public record GuestSummary(
     string Name,
     string Type,      // "qemu" (VM) or "lxc" (container)
     string Status,     // running, stopped, paused
+    string Node,        // which Proxmox node this guest runs on
     double CpuUsage,
     long MemoryUsed,
     long MemoryTotal,
