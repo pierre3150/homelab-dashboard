@@ -67,7 +67,12 @@ public class ConsoleRelayService : IConsoleRelayService
             // string - it also expects the SAME ticket sent as the very first
             // WebSocket message, and times out ("failed reading ticket") if that
             // never arrives.
-            var ticketBytes = Encoding.UTF8.GetBytes(ticket.Ticket);
+            // termproxy appears to read the ticket as a line (blocking until a
+            // terminator arrives), not just "the first message" - without a
+            // trailing newline the read call seems to hang until Proxmox's own
+            // timeout kills it, producing the exact same "failed reading
+            // ticket: timed out" even though a message WAS sent.
+            var ticketBytes = Encoding.UTF8.GetBytes(ticket.Ticket + "\n");
             await proxmoxSocket.SendAsync(ticketBytes, WebSocketMessageType.Text, endOfMessage: true, ct);
             _logger.LogInformation("Console: ticket sent as first WS message ({Bytes} bytes)", ticketBytes.Length);
         }
