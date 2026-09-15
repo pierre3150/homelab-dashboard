@@ -319,8 +319,9 @@ function openConsole(node, vmid, name) {
     const text = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data);
     consoleTerm.write(text);
   };
-  consoleSocket.onclose = () => {
-    document.getElementById("consoleStatus").textContent = "Deconnecte";
+  consoleSocket.onclose = (event) => {
+    const reason = event.reason ? ` (${event.reason})` : "";
+    document.getElementById("consoleStatus").textContent = `Deconnecte${reason}`;
   };
   consoleSocket.onerror = () => {
     document.getElementById("consoleStatus").textContent = "Erreur de connexion";
