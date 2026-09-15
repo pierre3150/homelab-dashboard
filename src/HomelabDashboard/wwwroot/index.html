@@ -45,7 +45,21 @@
   .hp-field { position: absolute; left: -9999px; top: -9999px; }
   #qrCode { max-width: 220px; border-radius: 8px; margin: 1rem 0; }
   code { background: #262a33; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .node-tag { color: #6366f1; font-weight: 500; }
+  .console-btn {
+    background: #262a33; border: none; color: #e6e6e6; padding: 0.3rem 0.7rem;
+    border-radius: 6px; cursor: pointer; font-size: 0.8rem; margin-top: 0.5rem;
+  }
+  #consoleOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000;
+    display: flex; flex-direction: column; padding: 1.5rem;
+  }
+  #consoleHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+  #consoleContainer { flex: 1; background: #000; border-radius: 8px; padding: 0.5rem; overflow: hidden; }
+  #consoleStatus { color: #8a8f98; font-size: 0.85rem; }
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/css/xterm.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/lib/xterm.min.js"></script>
 </head>
 <body>
 
@@ -108,6 +122,17 @@
     </form>
     <button class="secondary" onclick="closeTotpSetup()">Retour</button>
     <p id="totpSetupMessage"></p>
+  </div>
+
+  <div id="consoleOverlay" class="hidden">
+    <div id="consoleHeader">
+      <div>
+        <strong id="consoleTitle"></strong>
+        <span id="consoleStatus"></span>
+      </div>
+      <button class="secondary" onclick="closeConsole()">Fermer</button>
+    </div>
+    <div id="consoleContainer"></div>
   </div>
 
 <script>
@@ -259,12 +284,59 @@ function renderGuests(guests) {
   el.innerHTML = guests.map(g => `
     <div class="card">
       <h3>${g.name} <span class="badge ${statusClass(g.status)}">${g.status}</span></h3>
-      <div class="metric">#${g.vmId} · ${g.type === "qemu" ? "VM" : "LXC"}</div>
+      <div class="metric">#${g.vmId} · ${g.type === "qemu" ? "VM" : "LXC"} · <span class="node-tag">${g.node}</span></div>
       <div class="metric">CPU: ${g.cpuUsage}%</div>
       <div class="metric">RAM: ${fmtBytes(g.memoryUsed)} / ${fmtBytes(g.memoryTotal)}</div>
       <div class="metric">Uptime: ${fmtUptime(g.uptime)}</div>
+      ${g.type === "lxc" && g.status === "running"
+        ? `<button class="console-btn" onclick="openConsole('${g.node}', ${g.vmId}, '${g.name}')">&gt;_ Console</button>`
+        : ""}
     </div>
   `).join("");
+}
+
+let consoleSocket = null;
+let consoleTerm = null;
+
+function openConsole(node, vmid, name) {
+  document.getElementById("consoleTitle").textContent = `${name} (CT ${vmid} @ ${node})`;
+  document.getElementById("consoleStatus").textContent = "Connexion...";
+  document.getElementById("consoleOverlay").classList.remove("hidden");
+
+  const container = document.getElementById("consoleContainer");
+  container.innerHTML = "";
+  consoleTerm = new Terminal({ cursorBlink: true, fontSize: 14, theme: { background: "#000000" } });
+  consoleTerm.open(container);
+
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  consoleSocket = new WebSocket(`${protocol}//${location.host}/api/console/${node}/${vmid}`);
+  consoleSocket.binaryType = "arraybuffer";
+
+  consoleSocket.onopen = () => {
+    document.getElementById("consoleStatus").textContent = "Connecte";
+  };
+  consoleSocket.onmessage = (event) => {
+    const text = typeof event.data === "string" ? event.data : new TextDecoder().decode(event.data);
+    consoleTerm.write(text);
+  };
+  consoleSocket.onclose = () => {
+    document.getElementById("consoleStatus").textContent = "Deconnecte";
+  };
+  consoleSocket.onerror = () => {
+    document.getElementById("consoleStatus").textContent = "Erreur de connexion";
+  };
+
+  consoleTerm.onData((data) => {
+    if (consoleSocket && consoleSocket.readyState === WebSocket.OPEN) {
+      consoleSocket.send(data);
+    }
+  });
+}
+
+function closeConsole() {
+  if (consoleSocket) { consoleSocket.close(); consoleSocket = null; }
+  if (consoleTerm) { consoleTerm.dispose(); consoleTerm = null; }
+  document.getElementById("consoleOverlay").classList.add("hidden");
 }
 
 async function openTotpSetup() {
