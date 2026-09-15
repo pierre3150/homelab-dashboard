@@ -46,6 +46,14 @@ public class ConsoleRelayService : IConsoleRelayService
 
         await proxmoxSocket.ConnectAsync(wsUri, ct);
 
+        // Proxmox's termproxy doesn't just validate the ticket from the query
+        // string - it also expects the SAME ticket sent as the very first
+        // WebSocket message, and times out ("failed reading ticket") if that
+        // never arrives. This isn't documented anywhere obvious; found by
+        // reading the actual task log Proxmox produced on a failed attempt.
+        var ticketBytes = System.Text.Encoding.UTF8.GetBytes(ticket.Ticket);
+        await proxmoxSocket.SendAsync(ticketBytes, WebSocketMessageType.Text, endOfMessage: true, ct);
+
         var toProxmox = PumpAsync(clientSocket, proxmoxSocket, ct);
         var toClient = PumpAsync(proxmoxSocket, clientSocket, ct);
 
