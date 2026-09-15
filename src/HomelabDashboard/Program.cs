@@ -45,12 +45,19 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 // Every page/endpoint requires a valid session by default (see the global
 // AuthorizeFilter below) - this cookie IS that verification, checked on every
 // single request, not just once at the door.
+//
+// The cookie is Secure by default (HTTPS-only) - correct for production behind
+// nginx+TLS, but that means it silently never gets set when testing over plain
+// http:// locally. DASHBOARD_ALLOW_INSECURE_COOKIE=true lifts that requirement
+// for local testing ONLY - never set it on anything reachable from the internet.
+var allowInsecureCookie = Environment.GetEnvironmentVariable("DASHBOARD_ALLOW_INSECURE_COOKIE") == "true";
+
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.Cookie.Name = "hld_session";
         options.Cookie.HttpOnly = true;
-        options.Cookie.SecurePolicy = CookieSecurePolicy.Always; // requires HTTPS (nginx terminates TLS)
+        options.Cookie.SecurePolicy = allowInsecureCookie ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
         options.Cookie.SameSite = SameSiteMode.Strict;
         options.ExpireTimeSpan = TimeSpan.FromHours(12);
         options.SlidingExpiration = true;

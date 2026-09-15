@@ -26,6 +26,13 @@ services:
       ADMIN_USERNAME: "pierre"
       ADMIN_PASSWORD: "change-moi-avant-le-premier-demarrage"
 
+      # Decommente UNIQUEMENT pour tester en local en http:// sans nginx/TLS
+      # devant. Le cookie de session est Secure (HTTPS-only) par defaut - sans
+      # cette ligne, la connexion a l'air de marcher (200 OK) mais le cookie
+      # n'est jamais pose et tu resteras deconnecte a la requete suivante.
+      # NE JAMAIS laisser cette ligne active sur un deploiement expose en ligne.
+      # DASHBOARD_ALLOW_INSECURE_COOKIE: "true"
+
       # Identifiants de l'API Proxmox VE (Datacenter -> Permissions -> API Tokens).
       # Ne jamais utiliser le mot de passe root ici : un token API se scope et se révoque.
       PROXMOX__HOST: "192.168.1.X"
