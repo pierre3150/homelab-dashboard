@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // --- Database ---
-var dbPath = builder.Configuration["Dashboard:DbPath"] ?? "/data/dashboard.db";
+var dbPath = Environment.GetEnvironmentVariable("DASHBOARD_DB_PATH") ?? "/data/dashboard.db";
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
 
 // --- Data Protection (encrypts TOTP secrets at rest, and signs/encrypts the
@@ -20,7 +20,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlite($"Data 
 // Keys are persisted to disk so they survive container restarts/redeploys - if
 // they didn't, every TOTP secret would become unreadable (and every user locked
 // out of 2FA), and every session cookie would be invalidated, on every redeploy.
-var keyRingPath = builder.Configuration["Dashboard:KeyRingPath"] ?? "/data/keys";
+var keyRingPath = Environment.GetEnvironmentVariable("DASHBOARD_KEYRING_PATH") ?? "/data/keys";
 builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(keyRingPath));
 
 // --- Proxmox client (unchanged) ---

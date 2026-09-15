@@ -25,6 +25,13 @@ public class AuthIntegrationTests : IClassFixture<WebApplicationFactory<Program>
         // (a new scope each time) would silently get its own empty database.
         var dbName = $"AuthIntegrationTests-{Guid.NewGuid()}";
 
+        // Program.cs reads these two paths via raw Environment.GetEnvironmentVariable
+        // at the very top of the file, before WebApplicationFactory's
+        // ConfigureAppConfiguration hooks are guaranteed to have taken effect -
+        // setting the process env var directly sidesteps that timing entirely.
+        Environment.SetEnvironmentVariable("DASHBOARD_KEYRING_PATH", Path.Combine(Path.GetTempPath(), $"keys-{dbName}"));
+        Environment.SetEnvironmentVariable("DASHBOARD_DB_PATH", Path.Combine(Path.GetTempPath(), $"unused-{dbName}.db"));
+
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, config) =>
@@ -32,7 +39,6 @@ public class AuthIntegrationTests : IClassFixture<WebApplicationFactory<Program>
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Auth:LogFilePath"] = Path.Combine(Path.GetTempPath(), $"auth-test-{dbName}.log"),
-                    ["Dashboard:KeyRingPath"] = Path.Combine(Path.GetTempPath(), $"keys-{dbName}"),
                 });
             });
 
