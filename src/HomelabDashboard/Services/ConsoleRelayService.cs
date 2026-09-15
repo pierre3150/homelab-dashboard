@@ -67,12 +67,13 @@ public class ConsoleRelayService : IConsoleRelayService
             // string - it also expects the SAME ticket sent as the very first
             // WebSocket message, and times out ("failed reading ticket") if that
             // never arrives.
-            // termproxy appears to read the ticket as a line (blocking until a
-            // terminator arrives), not just "the first message" - without a
-            // trailing newline the read call seems to hang until Proxmox's own
-            // timeout kills it, producing the exact same "failed reading
-            // ticket: timed out" even though a message WAS sent.
-            var ticketBytes = Encoding.UTF8.GetBytes(ticket.Ticket + "\n");
+            // termproxy auth over the websocket, when using an API token (not a
+            // cookie session), requires the first message to be
+            // "<full-token-id>:<ticket>\n" - NOT the bare ticket. Confirmed via
+            // a Proxmox staff reply on the official forum after the same
+            // "authentication request failed" error:
+            // https://forum.proxmox.com/threads/how-to-tell-vncwebsocket-to-reply-in-text-mode-suitable-for-xterm-js.160547/
+            var ticketBytes = Encoding.UTF8.GetBytes($"{tokenId}:{ticket.Ticket}\n");
             await proxmoxSocket.SendAsync(ticketBytes, WebSocketMessageType.Text, endOfMessage: true, ct);
             _logger.LogInformation("Console: ticket sent as first WS message ({Bytes} bytes)", ticketBytes.Length);
         }
