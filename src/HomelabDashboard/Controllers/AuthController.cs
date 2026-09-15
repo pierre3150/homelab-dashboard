@@ -14,7 +14,6 @@ public record TotpConfirmRequest(string Code);
 
 [ApiController]
 [Route("api/auth")]
-[EnableRateLimiting("login")]
 public class AuthController : ControllerBase
 {
     private readonly IAuthService _authService;
@@ -26,6 +25,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request, CancellationToken ct)
     {
         var ip = GetClientIp();
@@ -59,6 +59,7 @@ public class AuthController : ControllerBase
 
     [HttpPost("login/totp")]
     [AllowAnonymous]
+    [EnableRateLimiting("login")]
     public async Task<IActionResult> LoginTotp([FromBody] TotpVerifyRequest request, CancellationToken ct)
     {
         var ip = GetClientIp();
