@@ -51,7 +51,15 @@ public class AuthIntegrationTests : IClassFixture<WebApplicationFactory<Program>
             });
         });
 
-        _client = _factory.CreateClient();
+        _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            // The session cookie is marked Secure (CookieSecurePolicy.Always).
+            // Per RFC 6265, a Secure cookie is only ever stored if received over
+            // an HTTPS-scheme request - TestServer's default http://localhost
+            // base address would cause the client's cookie jar to silently drop
+            // it, making every request after login look unauthenticated again.
+            BaseAddress = new Uri("https://localhost"),
+        });
     }
 
     [Fact]
