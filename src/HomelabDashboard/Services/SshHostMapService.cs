@@ -21,7 +21,13 @@ public class SshHostMapService : ISshHostMapService
     public SshHostMapService(IConfiguration configuration, ILogger<SshHostMapService> logger)
     {
         _logger = logger;
-        _map = ParseMap(configuration["Ssh:HostsMapJson"]);
+        // Read the raw env var directly: docker-compose.yml sets SSH_HOSTS_MAP
+        // (a plain env var name), which does NOT map to IConfiguration's
+        // "Ssh:HostsMapJson" the way "Ssh__HostsMapJson" would have - fixing
+        // the mismatch here rather than renaming the compose var, since Pierre
+        // already has SSH_HOSTS_MAP deployed.
+        var json = Environment.GetEnvironmentVariable("SSH_HOSTS_MAP") ?? configuration["Ssh:HostsMapJson"];
+        _map = ParseMap(json);
     }
 
     public string? ResolveIp(int vmid) => _map.GetValueOrDefault(vmid);
