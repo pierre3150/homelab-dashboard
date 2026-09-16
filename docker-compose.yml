@@ -19,6 +19,9 @@ services:
       # Journal d'audit des connexions, monte en lecture pour fail2ban qui
       # tourne sur l'hote (voir deploy/fail2ban/).
       - ./logs:/data/logs
+      # Cle privee SSH dediee a la console web (jamais la clé perso).
+      # Le fichier doit exister sur l'hote AVANT le premier `docker compose up`.
+      - ./ssh/dashboard_console_key:/data/ssh/dashboard_console_key:ro
     environment:
       # Compte admin cree automatiquement au premier demarrage si aucun
       # utilisateur n'existe encore. Change le mot de passe ensuite si besoin
@@ -43,3 +46,9 @@ services:
       # Laisse vide pour desactiver le captcha (le honeypot + rate limiting +
       # fail2ban restent actifs sans lui).
       CAPTCHA__HCAPTCHASECRETKEY: ""
+
+      # Console SSH web: utilisateur cree sur chaque CT (voir README), et la
+      # correspondance VMID -> IP. Complete/ajuste avec tes vrais CT.
+      SSH__USERNAME: "dashboard"
+      SSH__PRIVATEKEYPATH: "/data/ssh/dashboard_console_key"
+      SSH_HOSTS_MAP: '{"100":"192.168.1.71","101":"192.168.1.72","102":"192.168.1.73","104":"192.168.1.77","106":"192.168.1.84","107":"192.168.1.40"}'
