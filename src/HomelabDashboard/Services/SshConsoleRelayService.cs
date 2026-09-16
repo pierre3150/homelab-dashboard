@@ -1,5 +1,6 @@
 using System.Net.WebSockets;
 using Renci.SshNet;
+using SshConnectionInfo = Renci.SshNet.ConnectionInfo;
 
 namespace HomelabDashboard.Services;
 
@@ -45,7 +46,7 @@ public class SshConsoleRelayService : ISshConsoleRelayService
         try
         {
             using var keyFile = new PrivateKeyFile(keyPath);
-            var connectionInfo = new ConnectionInfo(ip, 22, username,
+            var connectionInfo = new SshConnectionInfo(ip, 22, username,
                 new PrivateKeyAuthenticationMethod(username, keyFile));
 
             client = new SshClient(connectionInfo);
