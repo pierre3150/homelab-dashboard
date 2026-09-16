@@ -31,12 +31,8 @@ builder.Services.AddHttpClient<IProxmoxClient, ProxmoxClient>()
     });
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 
-builder.Services.AddHttpClient<IProxmoxConsoleService, ProxmoxConsoleService>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-    });
-builder.Services.AddScoped<IConsoleRelayService, ConsoleRelayService>();
+builder.Services.AddSingleton<ISshHostMapService, SshHostMapService>();
+builder.Services.AddScoped<ISshConsoleRelayService, SshConsoleRelayService>();
 
 // --- Auth services ---
 builder.Services.AddScoped<IPasswordHasherService, PasswordHasherService>();
@@ -139,7 +135,7 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 // Not an MVC controller because WebSocket upgrade needs raw HttpContext access.
 // Still requires the same session cookie as everything else - RequireAuthorization()
 // applies the exact same global auth rule as the controller-based endpoints.
-app.Map("/api/console/{node}/{vmid:int}", async (HttpContext context, string node, int vmid, IConsoleRelayService relay) =>
+app.Map("/api/console/{vmid:int}", async (HttpContext context, int vmid, ISshConsoleRelayService relay) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -148,7 +144,7 @@ app.Map("/api/console/{node}/{vmid:int}", async (HttpContext context, string nod
     }
 
     using var clientSocket = await context.WebSockets.AcceptWebSocketAsync();
-    await relay.RelayAsync(clientSocket, node, vmid, context.RequestAborted);
+    await relay.RelayAsync(clientSocket, vmid, context.RequestAborted);
 }).RequireAuthorization();
 
 using (var scope = app.Services.CreateScope())

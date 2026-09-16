@@ -60,6 +60,8 @@
 </style>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
 <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
 </head>
 <body>
 
@@ -289,7 +291,7 @@ function renderGuests(guests) {
       <div class="metric">RAM: ${fmtBytes(g.memoryUsed)} / ${fmtBytes(g.memoryTotal)}</div>
       <div class="metric">Uptime: ${fmtUptime(g.uptime)}</div>
       ${g.type === "lxc" && g.status === "running"
-        ? `<button class="console-btn" onclick="openConsole('${g.node}', ${g.vmId}, '${g.name}')">&gt;_ Console</button>`
+        ? `<button class="console-btn" onclick="openConsole(${g.vmId}, '${g.name}')">&gt;_ Console</button>`
         : ""}
     </div>
   `).join("");
@@ -298,8 +300,8 @@ function renderGuests(guests) {
 let consoleSocket = null;
 let consoleTerm = null;
 
-function openConsole(node, vmid, name) {
-  document.getElementById("consoleTitle").textContent = `${name} (CT ${vmid} @ ${node})`;
+function openConsole(vmid, name) {
+  document.getElementById("consoleTitle").textContent = `${name} (CT ${vmid})`;
   document.getElementById("consoleStatus").textContent = "Connexion...";
   document.getElementById("consoleOverlay").classList.remove("hidden");
 
@@ -309,7 +311,7 @@ function openConsole(node, vmid, name) {
   consoleTerm.open(container);
 
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  consoleSocket = new WebSocket(`${protocol}//${location.host}/api/console/${node}/${vmid}`);
+  consoleSocket = new WebSocket(`${protocol}//${location.host}/api/console/${vmid}`);
   consoleSocket.binaryType = "arraybuffer";
 
   consoleSocket.onopen = () => {

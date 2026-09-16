@@ -98,7 +98,36 @@ cd /opt/homelab-dashboard
 docker compose pull && docker compose up -d
 ```
 
-## Développement local
+### 8. Console web SSH pour chaque CT
+
+Le bouton "Console" sur chaque CT LXC ouvre un vrai terminal shell, relayé en SSH par l'app - pas via l'API console de Proxmox (bug connu, non lié a l'auth par token API : voir https://forum.proxmox.com/threads/how-to-tell-vncwebsocket-to-reply-in-text-mode-suitable-for-xterm-js.160547/ et https://forum.proxmox.com/threads/the-api-does-not-verify-termproxy-tickets-created-by-api-token-users.91733/).
+
+**Sur chaque CT que tu veux pouvoir gérer**, crée un utilisateur dédié `dashboard` (pas root - accès limité si la clé fuit un jour), sans mot de passe, uniquement accessible par clé :
+
+```bash
+# Depuis le shell de l'hôte Proxmox, pour chaque CTID actif :
+pct exec <CTID> -- bash -c '
+  id -u dashboard &>/dev/null || useradd -m -s /bin/bash dashboard
+  mkdir -p /home/dashboard/.ssh
+  echo "TA_CLE_PUBLIQUE_ICI" >> /home/dashboard/.ssh/authorized_keys
+  chown -R dashboard:dashboard /home/dashboard/.ssh
+  chmod 700 /home/dashboard/.ssh
+  chmod 600 /home/dashboard/.ssh/authorized_keys
+'
+```
+
+Assure-toi que `openssh-server` tourne sur le CT (`systemctl is-active ssh`; sinon `apt install -y openssh-server && systemctl enable --now ssh`).
+
+**Sur l'hôte où tourne le dashboard**, place la clé privée dédiée (jamais ta clé perso) :
+```bash
+mkdir -p /opt/homelab-dashboard/ssh
+# copie dashboard_console_key ici
+chmod 600 /opt/homelab-dashboard/ssh/dashboard_console_key
+```
+
+Puis dans `docker-compose.yml`, mets à jour `SSH_HOSTS_MAP` avec le mapping VMID → IP de tes vrais CT (pas d'auto-découverte - les IP DHCP/agent invité ne sont pas fiables selon les templates).
+
+
 
 ```bash
 dotnet restore
