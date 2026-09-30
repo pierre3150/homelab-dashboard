@@ -31,6 +31,8 @@ builder.Services.AddHttpClient<IProxmoxClient, ProxmoxClient>()
         ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
     });
 builder.Services.AddScoped<IDashboardService, DashboardService>();
+builder.Services.AddScoped<IMorningReportService, MorningReportService>();
+builder.Services.AddHostedService<ResourceSamplingService>();
 
 builder.Services.AddSingleton<ISshHostMapService, SshHostMapService>();
 builder.Services.AddScoped<ISshConsoleRelayService, SshConsoleRelayService>();
