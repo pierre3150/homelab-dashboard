@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using HomelabDashboard.Data;
+using HomelabDashboard.Middleware;
 using HomelabDashboard.Models;
 using HomelabDashboard.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -122,6 +123,14 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.UseAuthentication();
+
+// Between authentication and authorization: only acts when the cookie above
+// found no session, and only when TrustedProxy:SharedSecret is configured
+// (see docker-compose.yml). Lets a request that Authelia already verified,
+// forwarded through NPM, sign straight in instead of hitting the app's own
+// login form on top - see Middleware/TrustedProxyAutoLoginMiddleware.cs.
+app.UseMiddleware<TrustedProxyAutoLoginMiddleware>();
+
 app.UseRateLimiter();
 app.UseAuthorization();
 

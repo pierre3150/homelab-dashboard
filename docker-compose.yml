@@ -6,9 +6,13 @@ services:
     container_name: homelab-dashboard
     restart: unless-stopped
     ports:
-      # N'expose que sur localhost: nginx (sur l'hote) est le seul point
-      # d'entree public, le conteneur ne doit jamais etre joignable directement.
-      - "127.0.0.1:8088:8080"
+      # NPM tourne dans un AUTRE conteneur (pas sur cet hote), donc contrairement
+      # a un nginx local, il ne peut pas atteindre 127.0.0.1 ici - il faut que le
+      # port soit joignable depuis le LAN. Ce n'est pas une porte ouverte sur
+      # internet pour autant : rien ne route vers ce CT depuis l'exterieur, seul
+      # NPM (sur le LAN) le fait, et TrustedProxy__SharedSecret plus bas empeche
+      # quiconque d'usurper l'entete Authelia meme s'il atteint ce port en direct.
+      - "8088:8080"
     volumes:
       # Base SQLite (utilisateurs, historique de connexions) - persiste entre
       # les redeploiements.
@@ -52,3 +56,15 @@ services:
       SSH__USERNAME: "dashboard"
       SSH__PRIVATEKEYPATH: "/data/ssh/dashboard_console_key"
       SSH_HOSTS_MAP: '{"100":"192.168.1.71","101":"192.168.1.72","102":"192.168.1.73","104":"192.168.1.77","106":"192.168.1.84","107":"192.168.1.40"}'
+
+      # Optionnel - SSO via Authelia: une fois defini, une requete qui arrive
+      # avec le bon secret partage (entete X-Trusted-Proxy-Secret, injectee
+      # uniquement par le snippet Advanced du Proxy Host NPM - voir README)
+      # ET un entete Remote-User (pose par Authelia) est connectee
+      # automatiquement, sans repasser par le login/TOTP interne. Sans le bon
+      # secret, ou en acces direct IP:port sans passer par NPM, le login
+      # interne classique reste actif - c'est le filet de securite.
+      #
+      # Genere une valeur forte avec: openssl rand -hex 32
+      # Laisse vide/absent pour desactiver completement cette fonctionnalite.
+      TRUSTEDPROXY__SHAREDSECRET: ""
