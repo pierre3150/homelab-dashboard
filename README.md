@@ -150,3 +150,82 @@ Couvre : hashing de mot de passe, génération/vérification TOTP, chiffrement d
 - Le certificat auto-signé de Proxmox est accepté explicitement (`ServerCertificateCustomValidationCallback`) car c'est un usage LAN interne — ne pas réutiliser ce pattern pour un appel exposé publiquement.
 - Le trousseau de chiffrement (`data/keys/`) protège les secrets TOTP au repos. Ne le perds pas sans en avoir conscience : ça invalide la 2FA de tous les comptes (il faudrait la reconfigurer).
 - Pas de création de compte en libre-service : nouveau compte = accès direct à la base SQLite (`data/db/dashboard.db`) pour l'instant. Normal pour un dashboard personnel à un seul utilisateur.
+
+## SSO via Authelia (accès distant)
+
+Pour exposer le dashboard à distance derrière NPM + Authelia, avec Authelia comme seul gardien (pas de double login) :
+
+```
+Internet → Cloudflare DNS → routeur (443) → NPM → Authelia (verif) → homelab-dashboard:8088
+```
+
+### 1. Génère le secret partagé
+
+```bash
+openssl rand -hex 32
+```
+
+Mets cette valeur dans `TRUSTEDPROXY__SHAREDSECRET` du `docker-compose.yml`, puis `docker compose up -d`.
+
+### 2. Proxy Host NPM
+
+- **Domain**: ton sous-domaine (ex. `dashboard.pierre-dev.fr`)
+- **Forward Hostname/IP**: IP du CT homepage · **Forward Port**: `8088`
+- **Websockets Support**: coché (nécessaire pour la console web des CT)
+- Onglet **SSL** : certificat Let's Encrypt, Force SSL activé
+- Onglet **Advanced** — colle ce bloc (adapte l'IP:port d'Authelia et le secret) :
+
+```nginx
+location /api/authz/auth-request {
+    internal;
+    proxy_pass http://<IP_AUTHELIA>:9091/api/authz/auth-request;
+    proxy_set_header X-Original-URL $scheme://$http_host$request_uri;
+    proxy_set_header X-Original-Method $request_method;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header X-Forwarded-Method $request_method;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $http_host;
+    proxy_set_header X-Forwarded-URI $request_uri;
+    proxy_set_header Content-Length "";
+    proxy_pass_request_body off;
+    client_max_body_size 0;
+}
+
+auth_request /api/authz/auth-request;
+auth_request_set $target_url $scheme://$http_host$request_uri;
+auth_request_set $remote_user $upstream_http_remote_user;
+auth_request_set $remote_email $upstream_http_remote_email;
+
+error_page 401 =302 https://auth.pierre-dev.fr/?rd=$target_url;
+
+proxy_set_header Remote-User $remote_user;
+proxy_set_header Remote-Email $remote_email;
+# Le secret partage - remplace par la valeur generee a l'etape 1. C'est lui,
+# pas Remote-User seul, qui prouve a l'app que la requete vient vraiment de
+# NPM (Remote-User seul serait usurpable par n'importe qui atteignant le CT
+# en direct sur le LAN).
+proxy_set_header X-Trusted-Proxy-Secret "<LE_SECRET_GENERE_ETAPE_1>";
+```
+
+⚠️ Vérifie le chemin exact de l'endpoint (`/api/authz/auth-request` pour Authelia 4.38+, `/api/verify` pour une config legacy plus ancienne) contre ta version d'Authelia (page de login ou `configuration.yml`).
+
+### 3. Règle d'accès Authelia
+
+Dans `configuration.yml` d'Authelia, sous `access_control.rules`, ajoute une entrée pour le nouveau sous-domaine (avant toute règle générique plus permissive) :
+
+```yaml
+access_control:
+  rules:
+    - domain: "dashboard.pierre-dev.fr"
+      policy: two_factor
+      subject: "user:pierre"
+```
+
+### 4. DNS
+
+Ajoute l'enregistrement `dashboard.pierre-dev.fr` dans Cloudflare (même pattern que `cloud.`/`auth.`), pointant vers ta config existante (IP publique ou tunnel).
+
+### Comportement résultant
+
+- Accès via `https://dashboard.pierre-dev.fr` → Authelia demande le login (2FA) une seule fois, puis le dashboard s'ouvre directement, sans reformulaire.
+- Accès direct par IP:port sur le LAN (`http://<ip-ct>:8088`) → aucun entête de confiance présent, le login interne (mot de passe + TOTP) protège toujours l'accès. C'est voulu : le secret partagé est la seule chose qui autorise le contournement du login interne, et il n'est connu que de NPM.
