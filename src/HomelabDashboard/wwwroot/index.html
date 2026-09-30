@@ -95,6 +95,7 @@
       </div>
       <div>
         <span id="whoami" class="subtitle"></span>
+        <button class="secondary" onclick="openMorningReport()">📋 Rapport</button>
         <button class="secondary" onclick="openTotpSetup()">2FA</button>
         <button class="secondary" onclick="logout()">Deconnexion</button>
       </div>
@@ -111,6 +112,26 @@
       <h2>VMs &amp; Containers</h2>
       <div class="grid" id="guests"></div>
     </section>
+  </div>
+
+  <div id="morningReportView" class="hidden">
+    <div class="topbar">
+      <div>
+        <h1>📋 Rapport</h1>
+        <p class="subtitle">Disque, erreurs et moyennes CPU/RAM sur une fenetre donnee</p>
+      </div>
+      <button class="secondary" onclick="closeMorningReport()">Retour</button>
+    </div>
+
+    <form onsubmit="return generateMorningReport(event)" style="display:flex; align-items:center; gap:0.75rem; margin-bottom:1.5rem;">
+      <input type="number" id="reportWindowHours" placeholder="24" min="1" style="max-width:120px; margin-bottom:0;" />
+      <span class="subtitle" style="margin:0;">heures en arriere (24 par defaut)</span>
+      <button type="submit">Generer</button>
+    </form>
+
+    <div id="reportError" style="color:#f87171; margin-bottom:1rem;"></div>
+    <div id="reportLoading" class="subtitle hidden">Generation en cours...</div>
+    <div id="reportContent"></div>
   </div>
 
   <div id="totpSetupView" class="hidden">
@@ -157,7 +178,7 @@ function statusClass(status) {
 }
 
 function show(id) {
-  ["loginView", "dashboardView", "totpSetupView"].forEach(v => {
+  ["loginView", "dashboardView", "totpSetupView", "morningReportView"].forEach(v => {
     document.getElementById(v).classList.toggle("hidden", v !== id);
   });
 }
@@ -354,6 +375,127 @@ async function openTotpSetup() {
 
 function closeTotpSetup() {
   show("dashboardView");
+}
+
+function openMorningReport() {
+  document.getElementById("reportError").textContent = "";
+  document.getElementById("reportContent").innerHTML = "";
+  document.getElementById("reportWindowHours").value = "";
+  show("morningReportView");
+  generateMorningReport();
+}
+
+function closeMorningReport() {
+  show("dashboardView");
+}
+
+async function generateMorningReport(event) {
+  if (event) event.preventDefault();
+
+  const errorEl = document.getElementById("reportError");
+  const loadingEl = document.getElementById("reportLoading");
+  const contentEl = document.getElementById("reportContent");
+  errorEl.textContent = "";
+  contentEl.innerHTML = "";
+  loadingEl.classList.remove("hidden");
+
+  const hours = document.getElementById("reportWindowHours").value;
+  const qs = hours ? `?windowHours=${encodeURIComponent(hours)}` : "";
+
+  try {
+    const res = await fetch(`/api/dashboard/morning-report${qs}`);
+    if (res.status === 401) { show("loginView"); return; }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `${res.status}`);
+    }
+    renderMorningReport(await res.json());
+  } catch (e) {
+    errorEl.textContent = "Erreur: " + e.message;
+  } finally {
+    loadingEl.classList.add("hidden");
+  }
+}
+
+function healthClass(health) {
+  if (health === "PASSED") return "running";
+  if (health === "FAILED") return "stopped";
+  return "other";
+}
+
+function renderMorningReport(report) {
+  const generated = new Date(report.generatedAt).toLocaleString("fr-FR");
+
+  const disksHtml = report.nodeDisks.map(d => `
+    <div class="card">
+      <h3>${d.node}</h3>
+      <div class="metric">${fmtBytes(d.usedBytes)} / ${fmtBytes(d.totalBytes)} (${d.usedPercent.toFixed(1)}%)</div>
+      <div class="bar-bg"><div class="bar-fill" style="width:${d.usedPercent}%"></div></div>
+    </div>
+  `).join("") || `<p class="subtitle">Aucune donnee disque.</p>`;
+
+  const physicalHtml = report.physicalDisks.map(d => `
+    <div class="card">
+      <h3>${d.devPath} <span class="badge ${healthClass(d.health)}">${d.health}</span></h3>
+      <div class="metric">${d.model || "Modele inconnu"} · <span class="node-tag">${d.node}</span></div>
+      <div class="metric">${fmtBytes(d.sizeBytes)}${d.wearoutPercent != null ? ` · Usure: ${d.wearoutPercent}%` : ""}</div>
+    </div>
+  `).join("") || `<p class="subtitle">Aucun disque physique remonte.</p>`;
+
+  const errorsHtml = report.errors.length ? `
+    <table style="width:100%; border-collapse:collapse;">
+      <thead><tr style="text-align:left; color:#8a8f98; font-size:0.8rem;">
+        <th style="padding:0.4rem;">Source</th><th style="padding:0.4rem;">Node</th>
+        <th style="padding:0.4rem;">Message</th><th style="padding:0.4rem;">Occurrences</th>
+        <th style="padding:0.4rem;">Derniere fois</th>
+      </tr></thead>
+      <tbody>
+        ${report.errors.map(e => `
+          <tr style="border-top:1px solid #262a33;">
+            <td style="padding:0.4rem;">${e.source}</td>
+            <td style="padding:0.4rem;">${e.node}</td>
+            <td style="padding:0.4rem;">${e.message}</td>
+            <td style="padding:0.4rem;">${e.count}</td>
+            <td style="padding:0.4rem;">${new Date(e.lastSeen).toLocaleString("fr-FR")}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  ` : `<p class="subtitle">Aucune erreur detectee sur la periode. ✅</p>`;
+
+  const guestsHtml = report.guestAverages.map(g => `
+    <div class="card">
+      <h3>${g.name}</h3>
+      <div class="metric">#${g.vmId} · ${g.type === "qemu" ? "VM" : "LXC"} · <span class="node-tag">${g.node}</span></div>
+      <div class="metric">CPU moyen: ${g.avgCpuUsagePercent.toFixed(1)}%</div>
+      <div class="metric">RAM moyenne: ${g.avgMemoryUsedPercent.toFixed(1)}%</div>
+      <div class="metric" style="color:#6b7280;">${g.sampleCount} echantillon(s)</div>
+    </div>
+  `).join("") || `<p class="subtitle">Pas encore assez d'historique pour des moyennes.</p>`;
+
+  document.getElementById("reportContent").innerHTML = `
+    <p class="subtitle">Genere le ${generated}</p>
+
+    <section>
+      <h2>Disque par node</h2>
+      <div class="grid">${disksHtml}</div>
+    </section>
+
+    <section>
+      <h2>Disques physiques (SMART)</h2>
+      <div class="grid">${physicalHtml}</div>
+    </section>
+
+    <section>
+      <h2>Erreurs detectees</h2>
+      ${errorsHtml}
+    </section>
+
+    <section>
+      <h2>Moyennes CPU/RAM par guest</h2>
+      <div class="grid">${guestsHtml}</div>
+    </section>
+  `;
 }
 
 async function confirmTotpSetup(event) {
