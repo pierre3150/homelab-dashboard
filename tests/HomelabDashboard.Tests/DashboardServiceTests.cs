@@ -33,6 +33,9 @@ public class DashboardServiceTests
                 new(201, "windows-vm", "qemu", "stopped", "pve2", 0, 0, 4_000_000_000, 0),
             });
 
+        mockClient.Setup(c => c.GetDisksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<PhysicalDiskStatus>());
+
         var service = new DashboardService(mockClient.Object);
 
         var snapshot = await service.GetSnapshotAsync();
@@ -57,6 +60,9 @@ public class DashboardServiceTests
 
         mockClient.Setup(c => c.GetGuestsAsync("pve2", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<GuestSummary> { new(200, "nextcloud", "lxc", "running", "pve2", 0, 0, 0, 0) });
+
+        mockClient.Setup(c => c.GetDisksAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<PhysicalDiskStatus>());
 
         var service = new DashboardService(mockClient.Object);
 
@@ -95,5 +101,60 @@ public class DashboardServiceTests
         var snapshot = await service.GetSnapshotAsync();
 
         Assert.InRange(snapshot.FetchedAt, before.AddSeconds(-1), DateTime.UtcNow.AddSeconds(1));
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_FlagsUnhealthyDisksAsErrors()
+    {
+        var mockClient = new Mock<IProxmoxClient>();
+        mockClient.Setup(c => c.GetNodesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<NodeStatus> { new("pve1", "online", 0, 0, 0, 0) });
+        mockClient.Setup(c => c.GetGuestsAsync("pve1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<GuestSummary>());
+        mockClient.Setup(c => c.GetDisksAsync("pve1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<PhysicalDiskStatus>
+            {
+                new("pve1", "/dev/sda", "Samsung 870", "PASSED", 3, 1_000_000_000_000),
+                new("pve1", "/dev/sdb", "WD Red", "FAILED", null, 4_000_000_000_000),
+            });
+
+        var service = new DashboardService(mockClient.Object);
+
+        var snapshot = await service.GetSnapshotAsync();
+
+        Assert.Equal(2, snapshot.Disks.Count);
+        var error = Assert.Single(snapshot.Errors);
+        Assert.Equal("disk", error.Source);
+        Assert.Equal("pve1", error.Node);
+        Assert.Contains("/dev/sdb", error.Message);
+    }
+
+    [Fact]
+    public async Task GetSnapshotAsync_RecordsApiError_WhenNodeFetchFails_WithoutFailingWholeSnapshot()
+    {
+        var mockClient = new Mock<IProxmoxClient>();
+        mockClient.Setup(c => c.GetNodesAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<NodeStatus>
+            {
+                new("pve1", "online", 0, 0, 0, 0),
+                new("pve2", "online", 0, 0, 0, 0),
+            });
+        mockClient.Setup(c => c.GetGuestsAsync("pve1", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("timeout"));
+        mockClient.Setup(c => c.GetDisksAsync("pve1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<PhysicalDiskStatus>());
+        mockClient.Setup(c => c.GetGuestsAsync("pve2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<GuestSummary> { new(200, "nextcloud", "lxc", "running", "pve2", 0, 0, 0, 0) });
+        mockClient.Setup(c => c.GetDisksAsync("pve2", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<PhysicalDiskStatus>());
+
+        var service = new DashboardService(mockClient.Object);
+
+        var snapshot = await service.GetSnapshotAsync();
+
+        Assert.Single(snapshot.Guests);
+        var error = Assert.Single(snapshot.Errors);
+        Assert.Equal("api", error.Source);
+        Assert.Equal("pve1", error.Node);
     }
 }

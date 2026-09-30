@@ -6,7 +6,9 @@ public record NodeStatus(
     double CpuUsage,
     long MemoryUsed,
     long MemoryTotal,
-    long Uptime
+    long Uptime,
+    long DiskUsed = 0,
+    long DiskTotal = 0
 );
 
 public record GuestSummary(
@@ -18,11 +20,33 @@ public record GuestSummary(
     double CpuUsage,
     long MemoryUsed,
     long MemoryTotal,
-    long Uptime
+    long Uptime,
+    long DiskUsed = 0,
+    long DiskTotal = 0
+);
+
+/// <summary>A physical disk on a node, with its SMART health status.</summary>
+public record PhysicalDiskStatus(
+    string Node,
+    string DevPath,
+    string? Model,
+    string Health,        // "PASSED", "FAILED", "UNKNOWN", ...
+    int? WearoutPercent,  // null for spinning disks (Proxmox reports "N/A")
+    long SizeBytes
+);
+
+/// <summary>A problem worth flagging in the morning report.</summary>
+public record DashboardError(
+    string Source,     // "disk", "api", ...
+    string Node,
+    string Message,
+    DateTime DetectedAt
 );
 
 public record DashboardSnapshot(
     List<NodeStatus> Nodes,
     List<GuestSummary> Guests,
+    List<PhysicalDiskStatus> Disks,
+    List<DashboardError> Errors,
     DateTime FetchedAt
 );
